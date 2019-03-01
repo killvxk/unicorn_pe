@@ -124,6 +124,35 @@ enum class Msr : unsigned int {
 	kIa32TscAux = 0xC0000103,
 };
 
+union FlagRegister {
+	ULONG_PTR all;
+	struct {
+		ULONG_PTR cf : 1;          //!< [0] Carry flag
+		ULONG_PTR reserved1 : 1;   //!< [1] Always 1
+		ULONG_PTR pf : 1;          //!< [2] Parity flag
+		ULONG_PTR reserved2 : 1;   //!< [3] Always 0
+		ULONG_PTR af : 1;          //!< [4] Borrow flag
+		ULONG_PTR reserved3 : 1;   //!< [5] Always 0
+		ULONG_PTR zf : 1;          //!< [6] Zero flag
+		ULONG_PTR sf : 1;          //!< [7] Sign flag
+		ULONG_PTR tf : 1;          //!< [8] Trap flag
+		ULONG_PTR intf : 1;        //!< [9] Interrupt flag
+		ULONG_PTR df : 1;          //!< [10] Direction flag
+		ULONG_PTR of : 1;          //!< [11] Overflow flag
+		ULONG_PTR iopl : 2;        //!< [12:13] I/O privilege level
+		ULONG_PTR nt : 1;          //!< [14] Nested task flag
+		ULONG_PTR reserved4 : 1;   //!< [15] Always 0
+		ULONG_PTR rf : 1;          //!< [16] Resume flag
+		ULONG_PTR vm : 1;          //!< [17] Virtual 8086 mode
+		ULONG_PTR ac : 1;          //!< [18] Alignment check
+		ULONG_PTR vif : 1;         //!< [19] Virtual interrupt flag
+		ULONG_PTR vip : 1;         //!< [20] Virtual interrupt pending
+		ULONG_PTR id : 1;          //!< [21] Identification flag
+		ULONG_PTR reserved5 : 10;  //!< [22:31] Always 0
+	} fields;
+};
+static_assert(sizeof(FlagRegister) == sizeof(void*), "Size check");
+
 #define IRP_MJ_CREATE                   0x00
 #define IRP_MJ_CREATE_NAMED_PIPE        0x01
 #define IRP_MJ_CLOSE                    0x02
@@ -409,3 +438,141 @@ typedef struct _RTL_PROCESS_MODULES
 	ULONG NumberOfModules;
 	RTL_PROCESS_MODULE_INFORMATION Modules[1];
 } RTL_PROCESS_MODULES, *PRTL_PROCESS_MODULES;
+
+typedef struct _RTL_CRITICAL_SECTION_64 {
+	uint64_t DebugInfo;
+	uint32_t LockCount;
+	uint32_t RecursionCount;
+	uint64_t OwningThread;
+	uint64_t LockSemaphore;
+	uint64_t SpinCount;
+} RTL_CRITICAL_SECTION_64, *PRTL_CRITICAL_SECTION_64;
+
+typedef struct _MDL {
+	struct _MDL *Next;
+	SHORT Size;
+	SHORT MdlFlags;
+
+	PVOID Process;
+	PVOID MappedSystemVa;   /* see creators for field size annotations. */
+	PVOID StartVa;   /* see creators for validity; could be address 0.  */
+	ULONG ByteCount;
+	ULONG ByteOffset;
+} MDL, *PMDL;
+
+typedef struct _SYSTEM_KERNEL_DEBUGGER_INFORMATION
+{
+	BOOLEAN DebuggerEnabled;
+	BOOLEAN DebuggerNotPresent;
+} SYSTEM_KERNEL_DEBUGGER_INFORMATION, *PSYSTEM_KERNEL_DEBUGGER_INFORMATION;
+
+typedef struct _KLDR_DATA_TABLE_ENTRY {
+	LIST_ENTRY InLoadOrderLinks;
+	PVOID ExceptionTable;
+	ULONG ExceptionTableSize;
+	// ULONG padding on IA64
+	PVOID GpValue;
+	PVOID NonPagedDebugInfo;
+	PVOID DllBase;
+	PVOID EntryPoint;
+	ULONG SizeOfImage;
+	UNICODE_STRING FullDllName;
+	UNICODE_STRING BaseDllName;
+	ULONG Flags;
+	USHORT LoadCount;
+	USHORT __Unused5;
+	PVOID SectionPointer;
+	ULONG CheckSum;
+	// ULONG padding on IA64
+	PVOID LoadedImports;
+	PVOID PatchInformation;
+} KLDR_DATA_TABLE_ENTRY, *PKLDR_DATA_TABLE_ENTRY;
+
+#define UNWIND_HISTORY_TABLE_NONE 0
+#define UNWIND_HISTORY_TABLE_GLOBAL 1
+#define UNWIND_HISTORY_TABLE_LOCAL 2
+
+#define MAXIMUM_INVERTED_FUNCTION_TABLE_SIZE 160
+
+typedef struct _INVERTED_FUNCTION_TABLE_ENTRY {
+	PRUNTIME_FUNCTION FunctionTable;
+	PVOID ImageBase;
+	ULONG SizeOfImage;
+	ULONG SizeOfTable;
+} INVERTED_FUNCTION_TABLE_ENTRY, *PINVERTED_FUNCTION_TABLE_ENTRY;
+
+typedef struct _INVERTED_FUNCTION_TABLE {
+	ULONG CurrentSize;
+	ULONG MaximumSize;
+	BOOLEAN Overflow;
+	INVERTED_FUNCTION_TABLE_ENTRY TableEntry[MAXIMUM_INVERTED_FUNCTION_TABLE_SIZE];
+} INVERTED_FUNCTION_TABLE, *PINVERTED_FUNCTION_TABLE;
+
+typedef enum _UNWIND_OP_CODES {
+	UWOP_PUSH_NONVOL = 0,
+	UWOP_ALLOC_LARGE,
+	UWOP_ALLOC_SMALL,
+	UWOP_SET_FPREG,
+	UWOP_SAVE_NONVOL,
+	UWOP_SAVE_NONVOL_FAR,
+	UWOP_SPARE_CODE1,
+	UWOP_SPARE_CODE2,
+	UWOP_SAVE_XMM128,
+	UWOP_SAVE_XMM128_FAR,
+	UWOP_PUSH_MACHFRAME
+} UNWIND_OP_CODES, *PUNWIND_OP_CODES;
+
+//
+// Define unwind code structure.
+//
+
+typedef union _UNWIND_CODE {
+	struct {
+		UCHAR CodeOffset;
+		UCHAR UnwindOp : 4;
+		UCHAR OpInfo : 4;
+	};
+
+	USHORT FrameOffset;
+} UNWIND_CODE, *PUNWIND_CODE;
+
+//
+// Define unwind information flags.
+//
+
+#define UNW_FLAG_NHANDLER 0x0
+#define UNW_FLAG_EHANDLER 0x1
+#define UNW_FLAG_UHANDLER 0x2
+#define UNW_FLAG_CHAININFO 0x4
+
+//
+// Define unwind information structure.
+//
+
+typedef struct _UNWIND_INFO {
+	UCHAR Version : 3;
+	UCHAR Flags : 5;
+	UCHAR SizeOfProlog;
+	UCHAR CountOfCodes;
+	UCHAR FrameRegister : 4;
+	UCHAR FrameOffset : 4;
+	UNWIND_CODE UnwindCode[1];
+
+	//
+	// The unwind codes are followed by an optional DWORD aligned field that
+	// contains the exception handler address or a function table entry if
+	// chained unwind information is specified. If an exception handler address
+	// is specified, then it is followed by the language specified exception
+	// handler data.
+	//
+	//  union {
+	//      struct {
+	//          ULONG ExceptionHandler;
+	//          ULONG ExceptionData[];
+	//      };
+	//
+	//      RUNTIME_FUNCTION FunctionEntry;
+	//  };
+	//
+
+} UNWIND_INFO, *PUNWIND_INFO;
