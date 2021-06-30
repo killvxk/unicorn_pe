@@ -25,6 +25,7 @@ ProcessModules::ProcessModules( class Process& proc )
     , _core( _proc.core() )
     , _ldrPatched( false )
 {
+	
 }
 
 ProcessModules::~ProcessModules()
@@ -351,7 +352,7 @@ call_result_t<exportData> ProcessModules::GetExport( const ModuleData& hMod, con
 
                     // Check if forward mod is loaded
                     auto mt = (phdrNt32->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC) ? mt_mod32 : mt_mod64;
-                    auto hChainMod = GetModule( wDll, LdrList, mt, baseModule );
+                    auto hChainMod = GetModule( wDll, ManualOnly, mt, baseModule );
                     if (hChainMod == nullptr)
                         return call_result_t<exportData>( data, STATUS_SOME_NOT_MAPPED );
 
@@ -954,7 +955,7 @@ bool ProcessModules::InjectPureIL(
 /// </summary>
 void ProcessModules::reset()
 {
-    CSLock lck( _modGuard );
+    CSLock lck(_modGuard);
 
     _modules.clear(); 
     _ldrPatched = false;

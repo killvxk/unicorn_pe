@@ -375,11 +375,10 @@ std::wstring NameResolve::GetProcessDirectory( DWORD pid )
     MODULEENTRY32W mod = { sizeof(MODULEENTRY32W), 0 };
     std::wstring path = L"";
 
-    if ((snapshot = CreateToolhelp32Snapshot( TH32CS_SNAPMODULE, pid )) && 
-        Module32FirstW( snapshot, &mod ) != FALSE
-        )
-    {
-        path = mod.szExePath;
+	WCHAR szPath[MAX_PATH];
+	if(GetModuleFileNameW(NULL, szPath, MAX_PATH))
+	{
+        path = szPath;
         path = path.substr( 0, path.rfind( L"\\" ) );
     }
 

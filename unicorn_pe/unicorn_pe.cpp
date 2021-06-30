@@ -16,6 +16,7 @@
 #include "nativestructs.h"
 #include "ucpe.h"
 #include "emuapi.h"
+using namespace blackbone;
 
 #pragma comment(lib,"ntdll.lib")
 
@@ -43,20 +44,26 @@ uint64_t EmuReadReturnAddress(uc_engine *uc);
 bool EmuReadNullTermUnicodeString(uc_engine *uc, uint64_t address, std::wstring &str);
 bool EmuReadNullTermString(uc_engine *uc, uint64_t address, std::string &str);
 
+static ULONG ExtractEntryPointRva(PVOID ModuleBase)
+{
+	return RtlImageNtHeader(ModuleBase)->OptionalHeader.AddressOfEntryPoint;
+}
+
 blackbone::LoadData ManualMapCallback(blackbone::CallbackType type, void* context, blackbone::Process& /*process*/, const blackbone::ModuleData& modInfo)
 {
 	PeEmulation *ctx = (PeEmulation *)context;
-	if (type == blackbone::ImageCallback)
+	if (type == blackbone::PreCallback)
 	{
 		uint64_t desiredBase = ctx->m_LoadModuleBase;
 		uint64_t desiredNextLoadBase = PAGE_ALIGN_64k((uint64_t)ctx->m_LoadModuleBase + (uint64_t)modInfo.size + 0x10000ull);
 		ctx->m_LoadModuleBase = desiredNextLoadBase;
 
-		return blackbone::LoadData(blackbone::MT_Default, blackbone::Ldr_None, desiredBase);
+		return blackbone::LoadData(blackbone::MT_Default, blackbone::Ldr_None, ctx->m_LoadModuleBase);
 	}
 	else if (type == blackbone::PostCallback)
 	{
-		ctx->MapImageToEngine(modInfo.name, (PVOID)modInfo.imgPtr, modInfo.size, modInfo.baseAddress, modInfo.entryPoint);
+		ctx->MapImageToEngine(modInfo.name, (PVOID)modInfo.imgPtr, modInfo.size, modInfo.baseAddress,
+			(ULONG64)modInfo.baseAddress + ExtractEntryPointRva((PVOID)modInfo.imgPtr));
 	}
 
 	return blackbone::LoadData(blackbone::MT_Default, blackbone::Ldr_None, 0);
@@ -323,7 +330,7 @@ NTSTATUS PeEmulation::LdrFindDllByName(const std::wstring &DllName, ULONG64 *Ima
 			newDllName += L".DLL";
 	}
 
-	auto moduleptr = thisProc.modules().GetModule(newDllName, ManualOnly, mt_default);
+	auto moduleptr = thisProc.modules().GetModule(newDllName, blackbone::eModSeachType::PEHeaders, mt_default);
 
 	if (moduleptr)
 	{
@@ -346,7 +353,7 @@ NTSTATUS PeEmulation::LdrLoadDllByName(const std::wstring &DllName, ULONG64 *Ima
 	using namespace blackbone;
 
 	auto MapResult = thisProc.mmap().MapImage(DllName,
-		ManualImports | NoSxS | NoDelayLoad| NoExceptions | NoTLS | NoExec,
+		ManualImports | NoSxS | NoDelayLoad| NoExceptions | NoTLS | NoExceptions,
 		ManualMapCallback, this);
 
 	if (!MapResult.success())
@@ -776,11 +783,11 @@ void PeEmulation::InitProcessorState()
 	uc_reg_write(m_uc, UC_X86_REG_DS, &ds.all);
 
 	SegmentSelector ss = { 0 };
-	ds.fields.index = 2;
+	ss.fields.index = 2;
 	uc_reg_write(m_uc, UC_X86_REG_SS, &ss.all);
 
 	SegmentSelector es = { 0 };
-	ds.fields.index = 2;
+	es.fields.index = 2;
 	uc_reg_write(m_uc, UC_X86_REG_ES, &es.all);
 
 	SegmentSelector gs = { 0 };
@@ -1179,18 +1186,18 @@ int main(int argc, char **argv)
 	uc_mem_map(uc, ctx.m_HeapBase, ctx.m_HeapEnd - ctx.m_HeapBase, (ctx.m_IsKernel) ? UC_PROT_READ | UC_PROT_WRITE | UC_PROT_EXEC : UC_PROT_READ | UC_PROT_WRITE);
 
 	auto MapResult = ctx.thisProc.mmap().MapImage(wfilename,
-		ManualImports | NoSxS | NoExceptions | NoDelayLoad | NoTLS | NoExec,
-		ManualMapCallback, &ctx, nullptr, 0);
+		ManualImports | NoSxS | NoExceptions | NoDelayLoad | NoTLS | NoExceptions | NoExec,
+		ManualMapCallback, &ctx, 0);
 
 	if (!MapResult.success())
 	{
 		printf("failed to MapImage\n");
 		return 0;
 	}
-
+    // LDR_DATA_TABLE_ENTRY_BASE_T* p= MapResult.result()->
 	ctx.m_ImageBase = MapResult.result()->baseAddress;
 	ctx.m_ImageEnd = MapResult.result()->baseAddress + MapResult.result()->size;
-	ctx.m_ImageEntry = MapResult.result()->entryPoint;
+	ctx.m_ImageEntry = ctx.m_ImageBase + ExtractEntryPointRva((PVOID)MapResult.result()->imgPtr);
 	ctx.m_LastRipModule = ctx.m_ImageBase;
 	ctx.m_ExecuteFromRip = ctx.m_ImageEntry;
 
@@ -1355,7 +1362,7 @@ int main(int argc, char **argv)
 			SectionHeader[i].SizeOfRawData = SectionHeader[i].Misc.VirtualSize;
 		}
 
-		//ctx.RebuildSection(imagebuf.GetBuffer(), (ULONG)(ctx.m_ImageEnd - ctx.m_ImageBase), RebuildSectionBuffer);
+		ctx.RebuildSection(imagebuf.GetBuffer(), (ULONG)(ctx.m_ImageEnd - ctx.m_ImageBase), RebuildSectionBuffer);
 
 		if (ctx.m_ImageRealEntry)
 			ntheader->OptionalHeader.AddressOfEntryPoint = (ULONG)(ctx.m_ImageRealEntry - ctx.m_ImageBase);

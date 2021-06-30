@@ -895,6 +895,22 @@ NTSTATUS MMap::ResolveImport( ImageContextPtr pImage, bool useDelayed /*= false 
     if (imports.empty())
         return STATUS_SUCCESS;
 
+	if (pImage->peImage.isSys())
+	{
+		if (!_wcsnicmp(pImage->peImage.name().c_str(), L"FLTMGR.", _ARRAYSIZE(L"FLTMGR.") - 1))
+		{
+			return STATUS_SUCCESS;
+		}
+		if (!_wcsnicmp(pImage->peImage.name().c_str(), L"NTOSKRNL.", _ARRAYSIZE(L"NTOSKRNL.") - 1))
+		{
+			return STATUS_SUCCESS;
+		}
+		if (!_wcsnicmp(pImage->peImage.name().c_str(), L"HAL.", _ARRAYSIZE(L"HAL.") - 1))
+		{
+			return STATUS_SUCCESS;
+		}
+	}
+
     // Read whole image to process it locally
     std::unique_ptr<uint8_t[]> localImage( new uint8_t[pImage->ldrEntry.size] );
     auto pLocal = localImage.get();
@@ -904,6 +920,15 @@ NTSTATUS MMap::ResolveImport( ImageContextPtr pImage, bool useDelayed /*= false 
     for (auto& importMod : imports)
     {
         std::wstring wstrDll = importMod.first;
+
+		if (!_wcsnicmp(wstrDll.c_str(), L"ext-ms-win-ntos-", _ARRAYSIZE(L"ext-ms-win-ntos-") - 1))
+		{
+			wstrDll = L"ntoskrnl.exe";
+		}
+		else if (!_wcsicmp(wstrDll.c_str(), L"ntoskrnl.dll"))
+		{
+			wstrDll = L"ntoskrnl.exe";
+		}
 
         // Load dependency if needed
         auto hMod = FindOrMapDependency( pImage, wstrDll );
@@ -927,6 +952,15 @@ NTSTATUS MMap::ResolveImport( ImageContextPtr pImage, bool useDelayed /*= false 
             while (expData && expData->procAddress && expData->isForwarded)
             {
                 std::wstring wdllpath = expData->forwardModule;
+				
+				if (!_wcsnicmp(wdllpath.c_str(), L"ext-ms-win-ntos-", _ARRAYSIZE(L"ext-ms-win-ntos-") - 1))
+				{
+					wdllpath = L"ntoskrnl.exe";
+				}
+				else if (!_wcsicmp(wdllpath.c_str(), L"ntoskrnl.dll"))
+				{
+					wdllpath = L"ntoskrnl.exe";
+				}
 
                 // Ensure module is loaded
                 auto hFwdMod = FindOrMapDependency( pImage, wdllpath );
